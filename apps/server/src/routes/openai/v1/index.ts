@@ -317,18 +317,20 @@ export function createV1CompletionsRoutes(fluxService: FluxService, billingServi
     return c.json(responseBody)
   }
 
-  // async function handleTTS(c: Context<HonoEnv>) {
-  //   const user = c.get('user')!
-  //   const flux = await fluxService.getFlux(user.id)
-  //   if (flux.flux <= 0) {
-  //     throw createPaymentRequiredError('Insufficient flux')
-  //   }
+  async function handleTTS(c: Context<HonoEnv>) {
+    const user = c.get('user')!
+    const flux = await fluxService.getFlux(user.id)
+    if (flux.flux <= 0) {
+      throw createPaymentRequiredError('Insufficient flux')
+    }
 
     const body = await c.req.json()
     const baseUrl = normalizeBaseUrl(env.GATEWAY_BASE_URL)
     const serverAttributes = getServerConnectionAttributes(baseUrl)
     let requestModel = body.model || 'auto'
-    const inputText: string = body.input ?? ''
+    // NOTICE: Guard against non-string body.input — upstream would reject it
+    // anyway, but billing math (.length → INCRBY) turns NaN into a Redis error.
+    const inputText: string = typeof body.input === 'string' ? body.input : ''
 
     if (requestModel === 'auto') {
       requestModel = env.DEFAULT_TTS_MODEL
@@ -347,33 +349,27 @@ export function createV1CompletionsRoutes(fluxService: FluxService, billingServi
       },
     })
 
-  //   const response = await context.with(trace.setSpan(context.active(), span), () =>
-  //     fetch(`${baseUrl}audio/speech`, {
-  //       method: 'POST',
-  //       headers: { 'Content-Type': 'application/json' },
-  //       body: JSON.stringify(body),
-  //     }))
+    const startedAt = Date.now()
 
-  //   const durationMs = Date.now() - startedAt
-  //   span.setAttribute('http.response.status_code', response.status)
+    const response = await context.with(trace.setSpan(context.active(), span), () =>
+      fetch(`${baseUrl}audio/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, model: requestModel }),
+      }))
 
-  //   if (!response.ok) {
-  //     span.setStatus({ code: SpanStatusCode.ERROR, message: `Gateway ${response.status}` })
-  //     span.end()
-  //     recordMetrics({ model: requestModel, status: response.status, type: 'tts', durationMs, fluxConsumed: 0 })
-  //     return new Response(response.body, {
-  //       status: response.status,
-  //       headers: buildSafeResponseHeaders(response),
-  //     })
-  //   }
+    const durationMs = Date.now() - startedAt
+    span.setAttribute('http.response.status_code', response.status)
 
-  //   const fluxPerRequest = await configKV.getOrThrow('FLUX_PER_REQUEST_TTS')
-  //   await billingService.consumeFluxForLLM({
-  //     userId: user.id,
-  //     amount: fluxPerRequest,
-  //     requestId: nanoid(),
-  //     description: `tts:${requestModel}`,
-  //   })
+    if (!response.ok) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: `Gateway ${response.status}` })
+      span.end()
+      recordMetrics({ model: requestModel, status: response.status, type: 'tts', durationMs, fluxConsumed: 0 })
+      return new Response(response.body, {
+        status: response.status,
+        headers: buildSafeResponseHeaders(response),
+      })
+    }
 
     // Debt-ledger billing: accumulate chars in Redis; only debit when we
     // cross a whole-Flux boundary. Sub-threshold requests cost 0 Flux at this
@@ -386,37 +382,44 @@ export function createV1CompletionsRoutes(fluxService: FluxService, billingServi
       metadata: { model: requestModel },
     })
 
-  //   return new Response(response.body, {
-  //     status: response.status,
-  //     headers: buildSafeResponseHeaders(response),
-  //   })
-  // }
+    span.setAttribute(AIRI_ATTR_BILLING_FLUX_CONSUMED, fluxConsumed)
+    span.end()
+    recordMetrics({ model: requestModel, status: response.status, type: 'tts', durationMs, fluxConsumed })
 
-  // async function handleTranscription(c: Context<HonoEnv>) {
-  //   const user = c.get('user')!
-  //   const flux = await fluxService.getFlux(user.id)
-  //   if (flux.flux <= 0) {
-  //     throw createPaymentRequiredError('Insufficient flux')
-  //   }
+    publishRequestLog({
+      userId: user.id,
+      model: requestModel,
+      status: response.status,
+      durationMs,
+      fluxConsumed,
+    })
 
-  //   const gatewayBaseUrl = await configKV.getOrThrow('GATEWAY_BASE_URL')
-  //   const baseUrl = normalizeBaseUrl(gatewayBaseUrl)
-  //   const serverAttributes = getServerConnectionAttributes(baseUrl)
+    return new Response(response.body, {
+      status: response.status,
+      headers: buildSafeResponseHeaders(response),
+    })
+  }
 
   async function handleListVoices(_c: Context<HonoEnv>) {
     const baseUrl = normalizeBaseUrl(env.GATEWAY_BASE_URL)
 
-  //   const startedAt = Date.now()
+    const response = await fetch(`${baseUrl}audio/voices`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    })
 
-  //   const rawBody = await c.req.arrayBuffer()
-  //   const contentType = c.req.header('content-type') || 'multipart/form-data'
+    if (!response.ok) {
+      return new Response(response.body, {
+        status: response.status,
+        headers: buildSafeResponseHeaders(response),
+      })
+    }
 
-  //   const response = await context.with(trace.setSpan(context.active(), span), () =>
-  //     fetch(`${baseUrl}audio/transcriptions`, {
-  //       method: 'POST',
-  //       headers: { 'Content-Type': contentType },
-  //       body: rawBody,
-  //     }))
+    return new Response(response.body, {
+      status: 200,
+      headers: buildSafeResponseHeaders(response),
+    })
+  }
 
   async function handleListTTSModels(_c: Context<HonoEnv>) {
     const model = env.DEFAULT_TTS_MODEL

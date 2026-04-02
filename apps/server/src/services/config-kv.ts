@@ -14,8 +14,6 @@ import { configRedisKey } from '../utils/redis-keys'
  */
 const ConfigEntrySchemas = {
   FLUX_PER_REQUEST: optional(number(), 5),
-  FLUX_PER_REQUEST_TTS: number(),
-  FLUX_PER_REQUEST_ASR: number(),
   INITIAL_USER_FLUX: optional(number(), 0),
   FLUX_PER_1K_TOKENS: optional(number(), 1),
   FLUX_PER_1K_CHARS_TTS: number(),

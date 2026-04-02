@@ -387,36 +387,9 @@ describe('v1CompletionsRoutes', () => {
     })
   })
 
-  describe.skip('pOST /api/v1/openai/audio/speech', () => {
-    it('should proxy TTS request to upstream', async () => {
-      const audioData = new Uint8Array([1, 2, 3, 4])
-      globalThis.fetch = vi.fn(async () => new Response(audioData, {
-        status: 200,
-        headers: { 'Content-Type': 'audio/mpeg' },
-      }))
-
-      const app = createTestApp(createMockFluxService(), createMockConfigKV())
-
-      const res = await app.fetch(
-        new Request('http://localhost/api/v1/openai/audio/speech', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'tts-1', input: 'hello', voice: 'alloy' }),
-        }),
-        { user: testUser } as any,
-      )
-
-      expect(res.status).toBe(200)
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        'http://mock-gateway/audio/speech',
-        expect.objectContaining({ method: 'POST' }),
-      )
-    })
-  })
-
-  describe.skip('pOST /api/v1/openai/audio/transcriptions', () => {
-    it('should proxy transcription request to upstream', async () => {
-      globalThis.fetch = vi.fn(async () => new Response('{"text":"hello"}', {
+  describe('pOST /api/v1/openai/audio/speech', () => {
+    it('should proxy TTS request to upstream with resolved model', async () => {
+      globalThis.fetch = vi.fn(async () => new Response(new Uint8Array([1]), {
         status: 200,
         headers: { 'Content-Type': 'audio/mpeg' },
       }))
@@ -475,17 +448,11 @@ describe('v1CompletionsRoutes', () => {
         headers: { 'Content-Type': 'application/json' },
       }))
 
-      const app = createTestApp(createMockFluxService(), createMockConfigKV())
-
-      const formData = new FormData()
-      formData.append('file', new Blob(['audio']), 'test.wav')
-      formData.append('model', 'whisper-1')
+      const billingService = createMockBillingService(100)
+      const app = createTestApp(createMockFluxService(), createMockConfigKV(), billingService)
 
       const res = await app.fetch(
-        new Request('http://localhost/api/v1/openai/audio/transcriptions', {
-          method: 'POST',
-          body: formData,
-        }),
+        new Request('http://localhost/api/v1/openai/audio/voices', { method: 'GET' }),
         { user: testUser } as any,
       )
 
@@ -557,6 +524,28 @@ describe('v1CompletionsRoutes', () => {
         expect.objectContaining({ userId: 'user-1', units: 2500 }),
       )
     })
+
+    it('should return 401 when unauthenticated', async () => {
+      const app = createTestApp(createMockFluxService(), createMockConfigKV())
+
+      const res = await app.request('/api/v1/openai/audio/voices', { method: 'GET' })
+      expect(res.status).toBe(401)
+    })
+
+    it('should forward gateway error status', async () => {
+      globalThis.fetch = vi.fn(async () => new Response('{"error":"bad"}', {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+      const app = createTestApp(createMockFluxService(), createMockConfigKV())
+
+      const res = await app.fetch(
+        new Request('http://localhost/api/v1/openai/audio/voices', { method: 'GET' }),
+        { user: testUser } as any,
+      )
+      expect(res.status).toBe(502)
+    })
   })
 
   describe('gET /api/v1/openai/audio/models', () => {
@@ -613,8 +602,8 @@ describe('v1CompletionsRoutes', () => {
       expect(data.voices[0].id).toBe('en-US-JennyNeural')
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        'http://mock-gateway/audio/transcriptions',
-        expect.objectContaining({ method: 'POST' }),
+        'http://mock-gateway/audio/voices',
+        expect.objectContaining({ method: 'GET' }),
       )
     })
   })

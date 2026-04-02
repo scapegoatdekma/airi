@@ -286,7 +286,7 @@ function handleDeleteProvider(providerId: string) {
               >
                 <template #topRight>
                   <button
-                    v-if="metadata.id !== 'speech-noop'"
+                    v-if="metadata.id !== 'speech-noop' && !metadata.id.startsWith('official-provider')"
                     type="button"
                     class="rounded bg-neutral-100 p-1 text-neutral-600 transition-colors dark:bg-neutral-800/60 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700/60"
                     @click.stop.prevent="handleDeleteProvider(metadata.id)"

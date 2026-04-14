@@ -232,25 +232,36 @@ const playbackManager = createPlaybackManager<AudioBuffer>({
 
 const speechPipeline = createSpeechPipeline<AudioBuffer>({
   tts: async (request, signal) => {
-    if (signal.aborted)
-      return null
+    console.debug('[TTS] tts() called, provider:', activeSpeechProvider.value, 'text:', request.text?.slice(0, 40))
 
-    if (activeSpeechProvider.value === 'speech-noop')
-      return null
-
-    if (!activeSpeechProvider.value)
-      return null
-
-    const provider = await providersStore.getProviderInstance(activeSpeechProvider.value) as SpeechProviderWithExtraOptions<string, UnElevenLabsOptions>
-    if (!provider) {
-      console.error('Failed to initialize speech provider')
+    if (signal.aborted) {
+      console.debug('[TTS] aborted early')
       return null
     }
 
-    if (!request.text && !request.special)
+    if (activeSpeechProvider.value === 'speech-noop') {
+      console.debug('[TTS] provider is speech-noop, skipping')
       return null
+    }
+
+    if (!activeSpeechProvider.value) {
+      console.debug('[TTS] no active provider')
+      return null
+    }
+
+    const provider = await providersStore.getProviderInstance(activeSpeechProvider.value) as SpeechProviderWithExtraOptions<string, UnElevenLabsOptions>
+    if (!provider) {
+      console.error('[TTS] Failed to initialize speech provider')
+      return null
+    }
+
+    if (!request.text && !request.special) {
+      console.debug('[TTS] empty request, skipping')
+      return null
+    }
 
     const providerConfig = providersStore.getProviderConfig(activeSpeechProvider.value)
+    console.debug('[TTS] providerConfig:', JSON.stringify(providerConfig))
 
     // For OpenAI Compatible providers, always use provider config for model and voice
     // since these are manually configured in provider settings
@@ -294,12 +305,18 @@ const speechPipeline = createSpeechPipeline<AudioBuffer>({
       }
     }
 
-    if (!model || !voice)
+    console.debug('[TTS] model:', model, 'voice:', voice?.id)
+
+    if (!model || !voice) {
+      console.warn('[TTS] missing model or voice, returning null', { model, voice })
       return null
+    }
 
     const input = ssmlEnabled.value
       ? speechStore.generateSSML(request.text, voice, { ...providerConfig, pitch: pitch.value })
       : request.text
+
+    console.debug('[TTS] sending generateSpeech request to', (provider as any)?.speech?.(model)?.baseURL ?? 'unknown baseURL')
 
     try {
       const res = await generateSpeech({
@@ -308,13 +325,17 @@ const speechPipeline = createSpeechPipeline<AudioBuffer>({
         voice: voice.id,
       })
 
-      if (signal.aborted || !res || res.byteLength === 0)
+      if (signal.aborted || !res || res.byteLength === 0) {
+        console.warn('[TTS] empty or aborted response', { aborted: signal.aborted, byteLength: res?.byteLength })
         return null
+      }
 
+      console.debug('[TTS] got audio response, byteLength:', res.byteLength)
       const audioBuffer = await audioContext.decodeAudioData(res)
       return audioBuffer
     }
-    catch {
+    catch (err) {
+      console.error('[TTS] generateSpeech failed:', err)
       return null
     }
   },
@@ -472,6 +493,7 @@ chatHookCleanups.push(onBeforeMessageComposed(async () => {
     priority: 'normal',
     behavior: 'queue',
   })
+  console.debug('[TTS] onBeforeMessageComposed: intent created, provider:', activeSpeechProvider.value)
 }))
 
 chatHookCleanups.push(onBeforeSend(async () => {
@@ -479,6 +501,7 @@ chatHookCleanups.push(onBeforeSend(async () => {
 }))
 
 chatHookCleanups.push(onTokenLiteral(async (literal) => {
+  console.debug('[TTS] onTokenLiteral fired, intent:', !!currentChatIntent, 'literal:', literal.slice(0, 30))
   currentChatIntent?.writeLiteral(literal)
 }))
 

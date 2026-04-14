@@ -122,7 +122,6 @@ async function streamFrom(model: string, chatProvider: ChatProvider, messages: M
         headers: options?.headers,
         stopWhen: stepCountAtLeast(10),
         tools,
-        captureToolErrors: true,
         onEvent,
       })
 

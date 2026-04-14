@@ -599,8 +599,23 @@ export const useProvidersStore = defineStore('providers', () => {
       category: 'speech',
       tasks: ['text-to-speech'],
       capabilities: {
-        listVoices: async () => {
-          return []
+        listVoices: async (config: Record<string, unknown>) => {
+          const configuredVoice = typeof config.voice === 'string' ? config.voice.trim() : ''
+          const commonVoices = ['xtts', 'alloy', 'irina']
+          const ids = configuredVoice
+            ? [configuredVoice, ...commonVoices.filter(v => v !== configuredVoice)]
+            : commonVoices
+
+          return ids.map((id) => {
+            return {
+              id,
+              name: id,
+              provider: 'openai-compatible-audio-speech',
+              description: `Manual/OpenAI-compatible voice id: ${id}`,
+              languages: [],
+              compatibleModels: ['tts-1', 'local-tts'],
+            } satisfies VoiceInfo
+          })
         },
         listModels: async (config: Record<string, unknown>) => {
           // Filter models to only include TTS models

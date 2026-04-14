@@ -44,6 +44,7 @@ const {
   speechProviderError,
   ssmlEnabled,
   availableVoices,
+  selectedLanguage,
 } = storeToRefs(speechStore)
 
 const { trackProviderClick } = useAnalytics()
@@ -466,6 +467,7 @@ function handleDeleteProvider(providerId: string) {
             <VoiceCardManySelect
               v-model:search-query="voiceSearchQuery"
               v-model:voice-id="activeSpeechVoiceId"
+              v-model:language-filter="selectedLanguage"
               :voices="availableVoices[activeSpeechProvider]?.filter(voice => {
                 // If no model is selected, show all voices
                 if (!activeSpeechModel) {
@@ -479,8 +481,10 @@ function handleDeleteProvider(providerId: string) {
                 description: voice.description,
                 previewURL: voice.previewURL,
                 customizable: false,
+                languages: (voice.languages || []).map(l => ({ name: l.title || l.code, code: l.code })),
               }))"
               :searchable="true"
+              :filterable-by-language="true"
               :search-placeholder="t('settings.pages.modules.speech.sections.section.provider-voice-selection.search_voices_placeholder')"
               :search-no-results-title="t('settings.pages.modules.speech.sections.section.provider-voice-selection.no_voices')"
               :search-no-results-description="t('settings.pages.modules.speech.sections.section.provider-voice-selection.no_voices_description')"
